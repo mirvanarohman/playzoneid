@@ -567,7 +567,8 @@ client.on('messageCreate', async message => {
     tempVoiceChannels.set(voiceChannel.id, {
       type: 'creator',
       categoryId,
-      roleId
+      roleId,
+      denyViewRoleId
     });
     saveConfig();
 
@@ -915,6 +916,13 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
             deny: perm.deny.toArray()
           });
         }
+      }
+
+      // Pastikan roleID dapat permission lengkap untuk temp voice
+      if (creatorData.roleId) {
+        await tempChannel.permissionOverwrites.create(creatorData.roleId, {
+          allow: ['Connect', 'ViewChannel', 'Speak', 'Stream', 'UseVAD', 'PrioritySpeaker']
+        });
       }
 
       // Tambah permission untuk pembuat (full control)
