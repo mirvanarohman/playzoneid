@@ -554,7 +554,7 @@ client.on('messageCreate', async message => {
       permissionOverwrites: [
         {
           id: role.id,
-          allow: ['Connect', 'ViewChannel']
+          allow: ['Connect', 'ViewChannel', 'Speak', 'Stream', 'UseVAD', 'PrioritySpeaker', 'RequestToSpeak']
         },
         {
           id: denyViewRole.id,
