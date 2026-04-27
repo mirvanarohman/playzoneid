@@ -1,5 +1,6 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits } = require('discord.js');
+const fs = require('fs');
 
 const client = new Client({
   intents: [
@@ -12,18 +13,48 @@ const client = new Client({
   partials: ['Message', 'Channel', 'Reaction']
 });
 
-// Reaction Role Data
-const reactionRoles = new Map();
+// Config file path
+const configPath = './botconfig.json';
 
-// Data display role per embed (untuk build description)
-const roleDisplayData = new Map(); // messageID -> [{emoji, roleName}]
+// Load config dari file
+let config = {
+  reactionRoles: {},
+  roleDisplayData: {},
+  welcomeChannels: {},
+  goodbyeChannels: {},
+  autoRoles: {} // guildID -> roleID (auto role untuk member baru)
+};
 
-// Welcome & Goodbye Channel Data
-const welcomeChannels = new Map(); // guildID -> channelID
-const goodbyeChannels = new Map(); // guildID -> channelID
+if (fs.existsSync(configPath)) {
+  try {
+    config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+  } catch (e) {
+    console.log('Gagal load config, menggunakan config default');
+  }
+}
+
+// Convert ke Map untuk penggunaan di bot
+const reactionRoles = new Map(Object.entries(config.reactionRoles || {}).map(([k, v]) => [k, v]));
+const roleDisplayData = new Map(Object.entries(config.roleDisplayData || {}).map(([k, v]) => [k, v]));
+const welcomeChannels = new Map(Object.entries(config.welcomeChannels || {}));
+const goodbyeChannels = new Map(Object.entries(config.goodbyeChannels || {}));
+const autoRoles = new Map(Object.entries(config.autoRoles || {}));
+
+// Fungsi save config ke file
+function saveConfig() {
+  const configToSave = {
+    reactionRoles: Object.fromEntries(reactionRoles),
+    roleDisplayData: Object.fromEntries(roleDisplayData),
+    welcomeChannels: Object.fromEntries(welcomeChannels),
+    goodbyeChannels: Object.fromEntries(goodbyeChannels),
+    autoRoles: Object.fromEntries(autoRoles)
+  };
+  fs.writeFileSync(configPath, JSON.stringify(configToSave, null, 2));
+}
 
 client.once('ready', () => {
   console.log(`Bot online sebagai ${client.user.tag}`);
+  console.log(`Config loaded dari ${configPath}`);
 });
 
 client.on('messageCreate', async message => {
@@ -32,7 +63,8 @@ client.on('messageCreate', async message => {
 
   // Moderasi Party Code Valorant
   const partyCodeChannelId = '1497224361357086893';
-  const valorantPartyCodePattern = /\b[A-Z0-9]{6}\b/;
+  // Pattern: Harus ada kombinasi HURUF + ANGKA, 6 karakter
+  const valorantPartyCodePattern = /\b(?=.*[A-Z])(?=.*[0-9])[A-Z0-9]{6}\b/;
 
   // Detect party code Valorant
   if (valorantPartyCodePattern.test(message.content.toUpperCase())) {
@@ -124,6 +156,9 @@ client.on('messageCreate', async message => {
     // Inisialisasi data display untuk message ini
     roleDisplayData.set(sentMessage.id, []);
 
+    // Save config
+    saveConfig();
+
     message.reply('✅ Embed terkirim! Sekarang pakai `!addroleembed <messageID> <emoji> <roleID> <roleName>` untuk tambah role.');
   }
 
@@ -191,6 +226,9 @@ client.on('messageCreate', async message => {
         roleId
       });
 
+      // Save config
+      saveConfig();
+
       message.reply(`✅ Role **${roleName}** berhasil ditambahkan!\n🎮 Emoji: ${emoji}\n🏷️ Role: ${role.name}`);
 
     } catch (error) {
@@ -254,6 +292,9 @@ client.on('messageCreate', async message => {
       // Hapus emoji dari pesan
       await targetMessage.reactions.resolve(emoji).remove();
 
+      // Save config
+      saveConfig();
+
       message.reply(`✅ Role dengan emoji ${emoji} berhasil dihapus!`);
 
     } catch (error) {
@@ -291,6 +332,7 @@ client.on('messageCreate', async message => {
     }
 
     welcomeChannels.set(message.guild.id, channelId);
+    saveConfig();
     message.reply(`✅ Channel welcome berhasil di-set ke ${channel}!`);
   }
 
@@ -309,7 +351,65 @@ client.on('messageCreate', async message => {
     }
 
     goodbyeChannels.set(message.guild.id, channelId);
+    saveConfig();
     message.reply(`✅ Channel goodbye berhasil di-set ke ${channel}!`);
+  }
+
+  // Set Auto Role (member baru otomatis dapat role)
+  if (message.content.startsWith('!setautorole ')) {
+    if (!message.member.permissions.has('ManageRoles')) {
+      return message.reply('❌ Kamu tidak punya permission ManageRoles!');
+    }
+
+    const roleId = message.content.slice(12).trim();
+    const role = message.guild.roles.cache.get(roleId);
+
+    if (!role) {
+      return message.reply('❌ Role tidak ditemukan!');
+    }
+
+    autoRoles.set(message.guild.id, roleId);
+    saveConfig();
+    message.reply(`✅ Auto role berhasil di-set! Member baru akan otomatis mendapatkan role ${role.name}`);
+  }
+
+  // Lihat semua config
+  if (message.content === '!config') {
+    if (!message.member.permissions.has('ManageRoles')) {
+      return message.reply('❌ Kamu tidak punya permission ManageRoles!');
+    }
+
+    const welcomeCh = welcomeChannels.get(message.guild.id);
+    const goodbyeCh = goodbyeChannels.get(message.guild.id);
+    const autoRole = autoRoles.get(message.guild.id);
+
+    let configText = '📋 **Bot Config:**\n\n';
+
+    if (welcomeCh) {
+      const ch = message.guild.channels.cache.get(welcomeCh);
+      configText += `📥 Welcome Channel: ${ch ? ch.name : welcomeCh}\n`;
+    } else {
+      configText += `📥 Welcome Channel: ❌ Belum di-set\n`;
+    }
+
+    if (goodbyeCh) {
+      const ch = message.guild.channels.cache.get(goodbyeCh);
+      configText += `📤 Goodbye Channel: ${ch ? ch.name : goodbyeCh}\n`;
+    } else {
+      configText += `📤 Goodbye Channel: ❌ Belum di-set\n`;
+    }
+
+    if (autoRole) {
+      const role = message.guild.roles.cache.get(autoRole);
+      configText += `🤖 Auto Role: ${role ? role.name : autoRole}\n`;
+    } else {
+      configText += `🤖 Auto Role: ❌ Belum di-set\n`;
+    }
+
+    configText += `\n🎮 Reaction Roles: ${reactionRoles.size} role(s)`;
+    configText += `\n💾 Config tersimpan di: \`${configPath}\``;
+
+    message.reply(configText);
   }
 
   // Kirim Embed Rules
@@ -388,7 +488,22 @@ client.on('messageCreate', async message => {
 // Event: Member Baru Join
 client.on('guildMemberAdd', async member => {
   const welcomeChannelId = welcomeChannels.get(member.guild.id);
+  const autoRoleId = autoRoles.get(member.guild.id);
 
+  // Beri auto role jika ada
+  if (autoRoleId) {
+    try {
+      const role = await member.guild.roles.fetch(autoRoleId);
+      if (role) {
+        await member.roles.add(role);
+        console.log(`✅ ${member.user.tag} dapat auto role ${role.name}`);
+      }
+    } catch (error) {
+      console.error('Gagal beri auto role:', error);
+    }
+  }
+
+  // Kirim welcome message jika channel di-set
   if (welcomeChannelId) {
     try {
       const channel = await member.guild.channels.fetch(welcomeChannelId);
