@@ -717,13 +717,13 @@ client.on('guildMemberAdd', async member => {
         const embed = {
           color: 0x57F287,
           title: '👋 Selamat Datang!',
-          description: `Halo ${member.user}, selamat bergabung di **${member.guild.name}**!\n\nJangan lupa baca <#1497220802796326972> dan semoga betah di Playzone ID`,
-          thumbnail: { url: member.user.displayAvatarURL({ dynamic: true }) },
+          description: `Halo ${member}, selamat bergabung di **${member.guild.name}**!\n\nJangan lupa baca <#1497220802796326972> dan semoga betah di Playzone ID`,
+          thumbnail: { url: member.displayAvatarURL({ dynamic: true }) },
           footer: { text: `Member ke-${member.guild.memberCount}` },
           timestamp: new Date()
         };
 
-        await channel.send({ content: `${member.user}`, embeds: [embed] });
+        await channel.send({ content: `${member}`, embeds: [embed] });
       }
     } catch (error) {
       console.error('Gagal kirim welcome message:', error);
@@ -742,8 +742,8 @@ client.on('guildMemberRemove', async member => {
         const embed = {
           color: 0xED4245,
           title: '👋 Sampai Jumpa!',
-          description: `**${member.user.tag}** telah meninggalkan server.\n\nSemoga kita bertemu lagi!`,
-          thumbnail: { url: member.user.displayAvatarURL({ dynamic: true }) },
+          description: `**${member.displayName}** telah meninggalkan server.\n\nSemoga kita bertemu lagi!`,
+          thumbnail: { url: member.displayAvatarURL({ dynamic: true }) },
           footer: { text: `Member tersisa: ${member.guild.memberCount}` },
           timestamp: new Date()
         };
@@ -888,7 +888,7 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
 
       // Buat temp voice channel untuk user
       const tempChannel = await newState.guild.channels.create({
-        name: `${member.user.username}'s Voice`,
+        name: `${member.displayName}'s Voice`,
         type: 2, // GUILD_VOICE
         parent: category,
         permissionOverwrites: [
@@ -899,6 +899,10 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
           {
             id: creatorData.roleId,
             allow: ['Connect', 'ViewChannel']
+          },
+          {
+            id: newState.guild.roles.everyone.id,
+            deny: ['ViewChannel', 'Connect']
           }
         ]
       });
