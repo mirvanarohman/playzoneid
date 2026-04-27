@@ -522,11 +522,11 @@ client.on('messageCreate', async message => {
     }
 
     const args = message.content.slice(16).trim().split(/\s+/);
-    if (args.length !== 3) {
-      return message.reply('❌ Format: `!createtempvoice <categoryID> <roleID> <everyoneID>`\n\nContoh: `!createtempvoice 1494684596074315850 1497258047146561769 1494684594266706062`');
+    if (args.length !== 4) {
+      return message.reply('❌ Format: `!createtempvoice <categoryID> <roleID> <everyoneID> <memberRoleID>`\n\nContoh: `!createtempvoice 1494684596074315850 1497258047146561769 1494684594266706062 1497191690216280084`');
     }
 
-    const [categoryId, roleId, everyoneId] = args;
+    const [categoryId, roleId, everyoneId, memberRoleId] = args;
 
     // Cek category
     const category = message.guild.channels.cache.get(categoryId);
@@ -534,7 +534,7 @@ client.on('messageCreate', async message => {
       return message.reply('❌ Category tidak ditemukan!');
     }
 
-    // Cek role
+    // Cek role Valorant
     const role = message.guild.roles.cache.get(roleId);
     if (!role) {
       return message.reply('❌ Role tidak ditemukan!');
@@ -544,6 +544,12 @@ client.on('messageCreate', async message => {
     const everyoneRole = message.guild.roles.cache.get(everyoneId);
     if (!everyoneRole) {
       return message.reply('❌ Everyone role tidak ditemukan!');
+    }
+
+    // Cek member role
+    const memberRole = message.guild.roles.cache.get(memberRoleId);
+    if (!memberRole) {
+      return message.reply('❌ Role Member tidak ditemukan!');
     }
 
     // Buat channel voice "Create Voice"
@@ -564,11 +570,12 @@ client.on('messageCreate', async message => {
       type: 'creator',
       categoryId,
       roleId,
-      everyoneId
+      everyoneId,
+      memberRoleId
     });
     saveConfig();
 
-    message.reply(`✅ Channel create temp voice berhasil dibuat: ${voiceChannel}!\n📍 Category: ${category.name}\n🎮 Role: ${role.name}\n👥 Everyone: ${everyoneRole.name}`);
+    message.reply(`✅ Channel create temp voice berhasil dibuat: ${voiceChannel}!\n📍 Category: ${category.name}\n🎮 Role: ${role.name}\n👥 Everyone: ${everyoneRole.name}\n👤 Member: ${memberRole.name}`);
   }
 
   // Delete Temp Voice Channel
@@ -902,17 +909,25 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
 
       // Set permission overwrites secara manual
       await tempChannel.permissionOverwrites.create(member.id, {
-        Allow: ['Connect', 'ManageChannels', 'MoveMembers', 'MuteMembers', 'DeafenMembers', 'ViewChannel', 'Speak', 'Stream', 'UseVAD', 'PrioritySpeaker']
+        allow: [
+          'Connect', 'ManageChannels', 'MoveMembers', 'MuteMembers', 'DeafenMembers', 'ViewChannel', 'Speak', 'Stream', 'UseVAD', 'PrioritySpeaker'
+        ]
       });
 
       await tempChannel.permissionOverwrites.create(creatorData.roleId, {
-        Allow: ['Connect', 'ViewChannel', 'Speak', 'Stream', 'UseVAD']
+        allow: ['Connect', 'ViewChannel', 'Speak', 'Stream', 'UseVAD']
       });
 
-      // Gunakan everyoneID dari config
+      // Deny ViewChannel untuk @everyone dan role Member
       if (creatorData.everyoneId) {
         await tempChannel.permissionOverwrites.create(creatorData.everyoneId, {
-          Deny: ['ViewChannel', 'Connect', 'Speak', 'Stream']
+          deny: ['ViewChannel', 'Connect']
+        });
+      }
+
+      if (creatorData.memberRoleId) {
+        await tempChannel.permissionOverwrites.create(creatorData.memberRoleId, {
+          deny: ['ViewChannel', 'Connect']
         });
       }
 
