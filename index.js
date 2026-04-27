@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits } = require('discord.js');
+const { Client, GatewayIntentBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
 const fs = require('fs');
 
 const client = new Client({
@@ -8,7 +8,8 @@ const client = new Client({
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.GuildMessageReactions,
-    GatewayIntentBits.GuildMembers
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildVoiceStates
   ],
   partials: ['Message', 'Channel', 'Reaction']
 });
@@ -22,7 +23,8 @@ let config = {
   roleDisplayData: {},
   welcomeChannels: {},
   goodbyeChannels: {},
-  autoRoles: {} // guildID -> roleID (auto role untuk member baru)
+  autoRoles: {},
+  tempVoiceChannels: {} // channelID -> { creatorID, categoryID, roleID }
 };
 
 if (fs.existsSync(configPath)) {
@@ -39,6 +41,7 @@ const roleDisplayData = new Map(Object.entries(config.roleDisplayData || {}).map
 const welcomeChannels = new Map(Object.entries(config.welcomeChannels || {}));
 const goodbyeChannels = new Map(Object.entries(config.goodbyeChannels || {}));
 const autoRoles = new Map(Object.entries(config.autoRoles || {}));
+const tempVoiceChannels = new Map(Object.entries(config.tempVoiceChannels || {}));
 
 // Fungsi save config ke file
 function saveConfig() {
@@ -47,7 +50,8 @@ function saveConfig() {
     roleDisplayData: Object.fromEntries(roleDisplayData),
     welcomeChannels: Object.fromEntries(welcomeChannels),
     goodbyeChannels: Object.fromEntries(goodbyeChannels),
-    autoRoles: Object.fromEntries(autoRoles)
+    autoRoles: Object.fromEntries(autoRoles),
+    tempVoiceChannels: Object.fromEntries(tempVoiceChannels)
   };
   fs.writeFileSync(configPath, JSON.stringify(configToSave, null, 2));
 }
@@ -57,9 +61,35 @@ client.once('ready', () => {
   console.log(`Config loaded dari ${configPath}`);
 });
 
+// Interface channel data (untuk tombol manage)
+const interfaceChannels = new Map(); // messageID -> channelID
+
 client.on('messageCreate', async message => {
   // Skip jika pesan dari bot
   if (message.author.bot) return;
+
+  // Command !help
+  if (message.content === '!help') {
+    const helpEmbed = {
+      color: 0x5865F2,
+      title: '📋 Bot Commands',
+      description: 'Daftar semua command yang tersedia:',
+      fields: [
+        { name: '🎮 Reaction Role', value: '`!sendrolesembed` - Kirim embed role\n`!addroleembed <msgID> <emoji> <roleID> <roleName>` - Tambah role\n`!removerolembed <msgID> <emoji>` - Hapus role\n`!list` - Lihat semua role', inline: false },
+        { name: '👋 Welcome & Goodbye', value: '`!setwelcome <channelID>` - Set welcome channel\n`!setgoodbye <channelID>` - Set goodbye channel\n`!setautorole <roleID>` - Set auto role member baru', inline: false },
+        { name: '🎤 Temp Voice', value: '`!createtempvoice <categoryID> <roleID>` - Buat channel create temp voice\n`!deletetempvoice <channelID>` - Hapus channel create temp voice\n`!templist` - Lihat semua temp voice', inline: false },
+        { name: '🎛️ Voice Interface', value: '`!interface <channelID>` - Kirim interface manage voice (lock/unlock/hide/show/rename/limit)', inline: false },
+        { name: '📜 Server Rules', value: '`!sendrules` - Kirim embed server rules', inline: false },
+        { name: '📢 Announcement', value: '`!announcement <channelID> <pesan>` - Kirim announcement + @everyone', inline: false },
+        { name: '⚙️ Config', value: '`!config` - Lihat semua config bot', inline: false },
+        { name: '🏓 Utilities', value: '`!ping` - Test bot', inline: false }
+      ],
+      footer: { text: '💾 Semua config tersimpan otomatis!' },
+      timestamp: new Date()
+    };
+
+    message.reply({ embeds: [helpEmbed] });
+  }
 
   // Moderasi Party Code Valorant
   const partyCodeChannelId = '1497224361357086893';
@@ -407,6 +437,7 @@ client.on('messageCreate', async message => {
     }
 
     configText += `\n🎮 Reaction Roles: ${reactionRoles.size} role(s)`;
+    configText += `\n🎤 Temp Voice Channels: ${tempVoiceChannels.size} channel(s)`;
     configText += `\n💾 Config tersimpan di: \`${configPath}\``;
 
     message.reply(configText);
@@ -483,6 +514,181 @@ client.on('messageCreate', async message => {
       message.reply('❌ Gagal kirim announcement! Pastikan channel ID benar.');
     }
   }
+
+  // Create Temp Voice Channel
+  if (message.content.startsWith('!createtempvoice ')) {
+    if (!message.member.permissions.has('ManageChannels')) {
+      return message.reply('❌ Kamu tidak punya permission ManageChannels!');
+    }
+
+    const args = message.content.slice(16).trim().split(/\s+/);
+    if (args.length !== 2) {
+      return message.reply('❌ Format: `!createtempvoice <categoryID> <roleID>`\n\nContoh: `!createtempvoice 1494684596074315850 1497258047146561769`');
+    }
+
+    const [categoryId, roleId] = args;
+
+    // Cek category
+    const category = message.guild.channels.cache.get(categoryId);
+    if (!category || category.type !== 4) { // 4 = GUILD_CATEGORY
+      return message.reply('❌ Category tidak ditemukan!');
+    }
+
+    // Cek role
+    const role = message.guild.roles.cache.get(roleId);
+    if (!role) {
+      return message.reply('❌ Role tidak ditemukan!');
+    }
+
+    // Buat channel voice "Create Voice"
+    const voiceChannel = await message.guild.channels.create({
+      name: '🎙️ Create Voice',
+      type: 2, // GUILD_VOICE
+      parent: categoryId,
+      permissionOverwrites: [
+        {
+          id: role.id,
+          allow: ['Connect', 'ViewChannel']
+        }
+      ]
+    });
+
+    // Simpan ke config
+    tempVoiceChannels.set(voiceChannel.id, {
+      type: 'creator',
+      categoryId,
+      roleId
+    });
+    saveConfig();
+
+    message.reply(`✅ Channel create temp voice berhasil dibuat: ${voiceChannel}!\n📍 Category: ${category.name}\n🎮 Role: ${role.name}`);
+  }
+
+  // Delete Temp Voice Channel
+  if (message.content.startsWith('!deletetempvoice ')) {
+    if (!message.member.permissions.has('ManageChannels')) {
+      return message.reply('❌ Kamu tidak punya permission ManageChannels!');
+    }
+
+    const channelId = message.content.slice(17).trim();
+    const channel = message.guild.channels.cache.get(channelId);
+
+    if (!channel) {
+      return message.reply('❌ Channel tidak ditemukan!');
+    }
+
+    await channel.delete();
+
+    // Hapus dari config
+    tempVoiceChannels.delete(channelId);
+    saveConfig();
+
+    message.reply('✅ Channel berhasil dihapus!');
+  }
+
+  // List Temp Voice Channels
+  if (message.content === '!templist') {
+    if (tempVoiceChannels.size === 0) {
+      return message.reply('❌ Belum ada temp voice channel yang di-setup.');
+    }
+
+    let list = '🎤 **Temp Voice Channels:**\n\n';
+    for (const [channelId, data] of tempVoiceChannels) {
+      if (data.type === 'creator') {
+        const channel = message.guild.channels.cache.get(channelId);
+        list += `📌 ${channel ? channel.name : channelId} (Creator)\n`;
+      } else {
+        const channel = message.guild.channels.cache.get(channelId);
+        const creator = await client.users.fetch(data.creatorId).catch(() => null);
+        list += `🎙️ ${channel ? channel.name : channelId} (by ${creator ? creator.username : data.creatorId})\n`;
+      }
+    }
+    message.reply(list);
+  }
+
+  // Kirim Interface Manage Voice
+  if (message.content.startsWith('!interface ')) {
+    const channelId = message.content.slice(10).trim();
+    const targetChannel = message.guild.channels.cache.get(channelId);
+
+    if (!targetChannel) {
+      return message.reply('❌ Channel tidak ditemukan!');
+    }
+
+    if (targetChannel.type !== 2) { // 2 = GUILD_VOICE
+      return message.reply('❌ Channel harus voice channel!');
+    }
+
+    // Cek apakah user punya akses ke channel ini
+    if (!targetChannel.permissionsFor(message.member).has('Connect')) {
+      return message.reply('❌ Kamu tidak punya akses ke channel ini!');
+    }
+
+    const embed = {
+      color: 0x5865F2,
+      title: '🎛️ Voice Channel Manager',
+      description: `Kelola channel **${targetChannel.name}** dengan tombol di bawah:\n\n✅ Klik tombol untuk mengatur channel!`,
+      fields: [
+        { name: '🔒 Lock/Unlock', value: 'Kunci/buka channel (hanya yang punya role bisa join)', inline: true },
+        { name: '👁️ Hide/Show', value: 'Sembunyikan/tampilkan channel', inline: true },
+        { name: '👤 Limit', value: 'Set limit user', inline: true },
+        { name: '✏️ Rename', value: 'Ganti nama channel', inline: true }
+      ],
+      footer: { text: 'Hanya pembuat channel yang bisa manage!' },
+      timestamp: new Date()
+    };
+
+    const row = new ActionRowBuilder()
+      .addComponents(
+        new ButtonBuilder()
+          .setCustomId(`voice_lock_${channelId}`)
+          .setLabel('🔒 Lock')
+          .setStyle(ButtonStyle.Primary),
+        new ButtonBuilder()
+          .setCustomId(`voice_unlock_${channelId}`)
+          .setLabel('🔓 Unlock')
+          .setStyle(ButtonStyle.Success),
+        new ButtonBuilder()
+          .setCustomId(`voice_hide_${channelId}`)
+          .setLabel('👁️ Hide')
+          .setStyle(ButtonStyle.Primary),
+        new ButtonBuilder()
+          .setCustomId(`voice_show_${channelId}`)
+          .setLabel('👁️‍🗨️ Show')
+          .setStyle(ButtonStyle.Success)
+      );
+
+    const row2 = new ActionRowBuilder()
+      .addComponents(
+        new ButtonBuilder()
+          .setCustomId(`voice_limit_${channelId}`)
+          .setLabel('👤 Limit User')
+          .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setCustomId(`voice_rename_${channelId}`)
+          .setLabel('✏️ Rename')
+          .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setCustomId(`voice_delete_${channelId}`)
+          .setLabel('🗑️ Delete')
+          .setStyle(ButtonStyle.Danger)
+      );
+
+    const sentMessage = await message.channel.send({
+      content: `<@${message.author.id}>`,
+      embeds: [embed],
+      components: [row, row2]
+    });
+
+    // Simpan interface channel
+    interfaceChannels.set(sentMessage.id, channelId);
+
+    // Hapus interface setelah 5 menit
+    setTimeout(() => {
+      sentMessage.delete().catch(() => {});
+      interfaceChannels.delete(sentMessage.id);
+    }, 5 * 60 * 1000);
+  }
 });
 
 // Event: Member Baru Join
@@ -511,7 +717,7 @@ client.on('guildMemberAdd', async member => {
         const embed = {
           color: 0x57F287,
           title: '👋 Selamat Datang!',
-          description: `Halo ${member.user}, selamat bergabung di **${member.guild.name}**!\n\nJangan lupa baca rules dan intro ya!`,
+          description: `Halo ${member.user}, selamat bergabung di **${member.guild.name}**!\n\nJangan lupa baca <#1497220802796326972> dan semoga betah di Playzone ID`,
           thumbnail: { url: member.user.displayAvatarURL({ dynamic: true }) },
           footer: { text: `Member ke-${member.guild.memberCount}` },
           timestamp: new Date()
@@ -589,6 +795,156 @@ client.on('messageReactionRemove', async (reaction, user) => {
     console.log(`❌ ${user.tag} kehilangan role ${role.name}`);
   } catch (error) {
     console.error('Gagal remove role:', error);
+  }
+});
+
+// Event: Button Click (Voice Interface)
+client.on('interactionCreate', async interaction => {
+  if (!interaction.isButton()) return;
+
+  const [action, channelId] = interaction.customId.split('_').slice(1);
+  const channel = await interaction.guild.channels.fetch(channelId);
+
+  if (!channel) {
+    return interaction.reply({ content: '❌ Channel tidak ditemukan!', ephemeral: true });
+  }
+
+  // Cek apakah user adalah creator atau punya permission manage
+  const tempData = tempVoiceChannels.get(channelId);
+  const isCreator = tempData && tempData.creatorId === interaction.user.id;
+  const hasPermission = interaction.member.permissions.has('ManageChannels');
+
+  if (action === 'delete' && !isCreator && !hasPermission) {
+    return interaction.reply({ content: '❌ Hanya pembuat channel yang bisa menghapus!', ephemeral: true });
+  }
+
+  switch (action) {
+    case 'lock': {
+      const everyoneRole = interaction.guild.roles.everyone;
+      await channel.permissionOverwrites.edit(everyoneRole, { Connect: false });
+      await interaction.reply({ content: `✅ Channel **${channel.name}** terkunci!`, ephemeral: true });
+      break;
+    }
+    case 'unlock': {
+      const everyoneRole = interaction.guild.roles.everyone;
+      await channel.permissionOverwrites.edit(everyoneRole, { Connect: true });
+      await interaction.reply({ content: `✅ Channel **${channel.name}** terbuka!`, ephemeral: true });
+      break;
+    }
+    case 'hide': {
+      const everyoneRole = interaction.guild.roles.everyone;
+      await channel.permissionOverwrites.edit(everyoneRole, { ViewChannel: false });
+      await interaction.reply({ content: `✅ Channel **${channel.name}** disembunyikan!`, ephemeral: true });
+      break;
+    }
+    case 'show': {
+      const everyoneRole = interaction.guild.roles.everyone;
+      await channel.permissionOverwrites.edit(everyoneRole, { ViewChannel: true });
+      await interaction.reply({ content: `✅ Channel **${channel.name}** ditampilkan!`, ephemeral: true });
+      break;
+    }
+    case 'limit': {
+      await interaction.reply({ content: '✏️ Masukkan limit user (angka 1-99):\n\nContoh: `5`', ephemeral: true });
+      const filter = m => m.author.id === interaction.user.id && !isNaN(m.content) && parseInt(m.content) >= 1 && parseInt(m.content) <= 99;
+      const collector = interaction.channel.createMessageCollector({ filter, time: 30000, max: 1 });
+      collector.on('collect', async m => {
+        const limit = parseInt(m.content);
+        await channel.setUserLimit(limit);
+        await m.reply(`✅ Limit user di-set ke ${limit}`);
+      });
+      break;
+    }
+    case 'rename': {
+      await interaction.reply({ content: '✏️ Masukkan nama baru:\n\nContoh: `Mabar Valorant`', ephemeral: true });
+      const filter = m => m.author.id === interaction.user.id;
+      const collector = interaction.channel.createMessageCollector({ filter, time: 60000, max: 1 });
+      collector.on('collect', async m => {
+        await channel.setName(m.content);
+        await m.reply(`✅ Channel di-rename menjadi **${m.content}**`);
+      });
+      break;
+    }
+    case 'delete': {
+      await channel.delete();
+      tempVoiceChannels.delete(channelId);
+      saveConfig();
+      await interaction.reply({ content: `✅ Channel **${channel.name}** dihapus!`, ephemeral: true });
+      break;
+    }
+  }
+});
+
+// Event: Voice State Update (Untuk create/delete temp voice)
+client.on('voiceStateUpdate', async (oldState, newState) => {
+  // Jika tidak ada perubahan channel
+  if (oldState.channelId === newState.channelId) return;
+
+  // Cek apakah user join ke creator channel
+  if (newState.channelId) {
+    const creatorData = tempVoiceChannels.get(newState.channelId);
+    if (creatorData && creatorData.type === 'creator') {
+      const category = await client.channels.fetch(creatorData.categoryId);
+      const member = newState.member;
+
+      // Buat temp voice channel untuk user
+      const tempChannel = await newState.guild.channels.create({
+        name: `${member.user.username}'s Voice`,
+        type: 2, // GUILD_VOICE
+        parent: category,
+        permissionOverwrites: [
+          {
+            id: member.id,
+            allow: ['Connect', 'ManageChannels', 'MoveMembers', 'MuteMembers', 'DeafenMembers']
+          },
+          {
+            id: creatorData.roleId,
+            allow: ['Connect', 'ViewChannel']
+          }
+        ]
+      });
+
+      // Pindahkan user ke temp channel
+      await member.voice.setChannel(tempChannel);
+
+      // Simpan data temp channel
+      tempVoiceChannels.set(tempChannel.id, {
+        type: 'temp',
+        creatorId: member.id,
+        categoryId: creatorData.categoryId,
+        roleId: creatorData.roleId
+      });
+      saveConfig();
+
+      console.log(`✅ Temp voice dibuat: ${tempChannel.name} untuk ${member.user.tag}`);
+    }
+  }
+
+  // Cek apakah user meninggalkan temp voice channel
+  if (oldState.channelId) {
+    const tempData = tempVoiceChannels.get(oldState.channelId);
+    if (tempData && tempData.type === 'temp') {
+      const channel = await client.channels.fetch(oldState.channelId);
+
+      // Cek apakah channel kosong
+      if (channel.members.size === 0) {
+        await channel.delete();
+        tempVoiceChannels.delete(oldState.channelId);
+        saveConfig();
+        console.log(`🗑️ Temp voice dihapus: ${channel.name}`);
+      } else {
+        // Pindahkan ownership ke user lain yang masih ada
+        const newOwner = channel.members.first();
+        if (newOwner) {
+          tempVoiceChannels.set(oldState.channelId, {
+            type: 'temp',
+            creatorId: newOwner.id,
+            categoryId: tempData.categoryId,
+            roleId: tempData.roleId
+          });
+          saveConfig();
+        }
+      }
+    }
   }
 });
 
