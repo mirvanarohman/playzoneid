@@ -522,11 +522,11 @@ client.on('messageCreate', async message => {
     }
 
     const args = message.content.slice(16).trim().split(/\s+/);
-    if (args.length !== 4) {
-      return message.reply('❌ Format: `!createtempvoice <categoryID> <roleID> <everyoneID> <memberRoleID>`\n\nContoh: `!createtempvoice 1494684596074315850 1497258047146561769 1494684594266706062 1497191690216280084`');
+    if (args.length !== 3) {
+      return message.reply('❌ Format: `!createtempvoice <categoryID> <roleID> <denyViewRoleID>`\n\nContoh: `!createtempvoice 1494684596074315850 1497258047146561769 1494684594266706062`');
     }
 
-    const [categoryId, roleId, everyoneId, memberRoleId] = args;
+    const [categoryId, roleId, denyViewRoleId] = args;
 
     // Cek category
     const category = message.guild.channels.cache.get(categoryId);
@@ -540,16 +540,10 @@ client.on('messageCreate', async message => {
       return message.reply('❌ Role tidak ditemukan!');
     }
 
-    // Cek everyone role
-    const everyoneRole = message.guild.roles.cache.get(everyoneId);
-    if (!everyoneRole) {
-      return message.reply('❌ Everyone role tidak ditemukan!');
-    }
-
-    // Cek member role
-    const memberRole = message.guild.roles.cache.get(memberRoleId);
-    if (!memberRole) {
-      return message.reply('❌ Role Member tidak ditemukan!');
+    // Cek role deny view
+    const denyViewRole = message.guild.roles.cache.get(denyViewRoleId);
+    if (!denyViewRole) {
+      return message.reply('❌ Role deny view tidak ditemukan!');
     }
 
     // Buat channel voice "Create Voice"
@@ -561,6 +555,10 @@ client.on('messageCreate', async message => {
         {
           id: role.id,
           allow: ['Connect', 'ViewChannel']
+        },
+        {
+          id: denyViewRole.id,
+          deny: ['ViewChannel']
         }
       ]
     });
@@ -569,13 +567,11 @@ client.on('messageCreate', async message => {
     tempVoiceChannels.set(voiceChannel.id, {
       type: 'creator',
       categoryId,
-      roleId,
-      everyoneId,
-      memberRoleId
+      roleId
     });
     saveConfig();
 
-    message.reply(`✅ Channel create temp voice berhasil dibuat: ${voiceChannel}!\n📍 Category: ${category.name}\n🎮 Role: ${role.name}\n👥 Everyone: ${everyoneRole.name}\n👤 Member: ${memberRole.name}`);
+    message.reply(`✅ Channel create temp voice berhasil dibuat: ${voiceChannel}!\n📍 Category: ${category.name}\n🎮 Role: ${role.name}\n🚫 Tidak Bisa Lihat: ${denyViewRole.name}`);
   }
 
   // Delete Temp Voice Channel
