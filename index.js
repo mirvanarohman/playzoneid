@@ -890,21 +890,20 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
       const tempChannel = await newState.guild.channels.create({
         name: `${member.displayName}'s Voice`,
         type: 2, // GUILD_VOICE
-        parent: category,
-        permissionOverwrites: [
-          {
-            id: member.id,
-            allow: ['Connect', 'ManageChannels', 'MoveMembers', 'MuteMembers', 'DeafenMembers', 'ViewChannel', 'Speak', 'Stream', 'UseVAD', 'PrioritySpeaker']
-          },
-          {
-            id: creatorData.roleId,
-            allow: ['Connect', 'ViewChannel', 'Speak', 'Stream', 'UseVAD']
-          },
-          {
-            id: newState.guild.roles.everyone.id,
-            deny: ['Connect', 'ViewChannel', 'Speak', 'Stream']
-          }
-        ]
+        parent: category
+      });
+
+      // Set permission overwrites secara manual
+      await tempChannel.permissionOverwrites.create(member.id, {
+        Allow: ['Connect', 'ManageChannels', 'MoveMembers', 'MuteMembers', 'DeafenMembers', 'ViewChannel', 'Speak', 'Stream', 'UseVAD', 'PrioritySpeaker']
+      });
+
+      await tempChannel.permissionOverwrites.create(creatorData.roleId, {
+        Allow: ['Connect', 'ViewChannel', 'Speak', 'Stream', 'UseVAD']
+      });
+
+      await tempChannel.permissionOverwrites.create(newState.guild.roles.everyone.id, {
+        Deny: ['ViewChannel', 'Connect', 'Speak', 'Stream']
       });
 
       // Pindahkan user ke temp channel
