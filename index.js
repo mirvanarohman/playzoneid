@@ -894,15 +894,15 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
         permissionOverwrites: [
           {
             id: member.id,
-            allow: ['Connect', 'ManageChannels', 'MoveMembers', 'MuteMembers', 'DeafenMembers']
+            allow: ['Connect', 'ManageChannels', 'MoveMembers', 'MuteMembers', 'DeafenMembers', 'ViewChannel', 'Speak', 'Stream', 'UseVAD', 'PrioritySpeaker']
           },
           {
             id: creatorData.roleId,
-            allow: ['Connect', 'ViewChannel']
+            allow: ['Connect', 'ViewChannel', 'Speak', 'Stream', 'UseVAD']
           },
           {
             id: newState.guild.roles.everyone.id,
-            deny: ['ViewChannel', 'Connect']
+            deny: ['Connect', 'ViewChannel', 'Speak', 'Stream']
           }
         ]
       });
