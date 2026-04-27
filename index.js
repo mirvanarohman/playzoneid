@@ -522,11 +522,11 @@ client.on('messageCreate', async message => {
     }
 
     const args = message.content.slice(16).trim().split(/\s+/);
-    if (args.length !== 2) {
-      return message.reply('❌ Format: `!createtempvoice <categoryID> <roleID>`\n\nContoh: `!createtempvoice 1494684596074315850 1497258047146561769`');
+    if (args.length !== 3) {
+      return message.reply('❌ Format: `!createtempvoice <categoryID> <roleID> <everyoneID>`\n\nContoh: `!createtempvoice 1494684596074315850 1497258047146561769 1494684594266706062`');
     }
 
-    const [categoryId, roleId] = args;
+    const [categoryId, roleId, everyoneId] = args;
 
     // Cek category
     const category = message.guild.channels.cache.get(categoryId);
@@ -538,6 +538,12 @@ client.on('messageCreate', async message => {
     const role = message.guild.roles.cache.get(roleId);
     if (!role) {
       return message.reply('❌ Role tidak ditemukan!');
+    }
+
+    // Cek everyone role
+    const everyoneRole = message.guild.roles.cache.get(everyoneId);
+    if (!everyoneRole) {
+      return message.reply('❌ Everyone role tidak ditemukan!');
     }
 
     // Buat channel voice "Create Voice"
@@ -557,11 +563,12 @@ client.on('messageCreate', async message => {
     tempVoiceChannels.set(voiceChannel.id, {
       type: 'creator',
       categoryId,
-      roleId
+      roleId,
+      everyoneId
     });
     saveConfig();
 
-    message.reply(`✅ Channel create temp voice berhasil dibuat: ${voiceChannel}!\n📍 Category: ${category.name}\n🎮 Role: ${role.name}`);
+    message.reply(`✅ Channel create temp voice berhasil dibuat: ${voiceChannel}!\n📍 Category: ${category.name}\n🎮 Role: ${role.name}\n👥 Everyone: ${everyoneRole.name}`);
   }
 
   // Delete Temp Voice Channel
@@ -902,9 +909,12 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
         Allow: ['Connect', 'ViewChannel', 'Speak', 'Stream', 'UseVAD']
       });
 
-      await tempChannel.permissionOverwrites.create(newState.guild.roles.everyone.id, {
-        Deny: ['ViewChannel', 'Connect', 'Speak', 'Stream']
-      });
+      // Gunakan everyoneID dari config
+      if (creatorData.everyoneId) {
+        await tempChannel.permissionOverwrites.create(creatorData.everyoneId, {
+          Deny: ['ViewChannel', 'Connect', 'Speak', 'Stream']
+        });
+      }
 
       // Pindahkan user ke temp channel
       await member.voice.setChannel(tempChannel);
@@ -914,11 +924,12 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
         type: 'temp',
         creatorId: member.id,
         categoryId: creatorData.categoryId,
-        roleId: creatorData.roleId
+        roleId: creatorData.roleId,
+        everyoneId: creatorData.everyoneId
       });
       saveConfig();
 
-      console.log(`✅ Temp voice dibuat: ${tempChannel.name} untuk ${member.user.tag}`);
+      console.log(`✅ Temp voice dibuat: ${tempChannel.name} untuk ${member.displayName}`);
     }
   }
 
