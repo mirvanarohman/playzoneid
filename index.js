@@ -896,38 +896,49 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
     if (creatorData && creatorData.type === 'creator') {
       const category = await client.channels.fetch(creatorData.categoryId);
       const member = newState.member;
+      const guild = newState.guild;
 
-      // Buat temp voice channel untuk user
-      const tempChannel = await newState.guild.channels.create({
-        name: `${member.displayName}'s Voice`,
-        type: 2, // GUILD_VOICE
-        parent: category
+      // Fetch role yang diperlukan
+      const roleID = creatorData.roleId;
+      const denyViewRoleID = creatorData.denyViewRoleId;
+
+      // Buat permission overwrites yang bersih (tidak menyalin dari creator)
+      const permissionOverwrites = [];
+
+      // 1. @everyone: Connect = false
+      permissionOverwrites.push({
+        id: guild.roles.everyone.id,
+        deny: ['Connect']
       });
 
-      // Ambil permission dari Create Voice
-      const creatorChannel = await newState.guild.channels.fetch(newState.channelId);
-      const permissions = creatorChannel.permissionOverwrites.cache;
-
-      // Terapkan permission yang sama ke temp voice
-      for (const perm of permissions.values()) {
-        if (perm.id !== newState.guild.roles.everyone.id) { // Skip @everyone
-          await tempChannel.permissionOverwrites.create(perm.id, {
-            allow: perm.allow.toArray(),
-            deny: perm.deny.toArray()
-          });
-        }
-      }
-
-      // Pastikan roleID dapat permission lengkap untuk temp voice
-      if (creatorData.roleId) {
-        await tempChannel.permissionOverwrites.create(creatorData.roleId, {
-          allow: ['Connect', 'ViewChannel', 'Speak', 'Stream', 'UseVAD', 'PrioritySpeaker']
+      // 2. roleID: ViewChannel, Connect, Speak = true (jika roleID ada)
+      if (roleID) {
+        permissionOverwrites.push({
+          id: roleID,
+          allow: ['ViewChannel', 'Connect', 'Speak', 'Stream', 'UseVAD', 'PrioritySpeaker']
         });
       }
 
-      // Tambah permission untuk pembuat (full control)
-      await tempChannel.permissionOverwrites.create(member.id, {
+      // 3. denyViewRoleID: ViewChannel = false (jika ada)
+      if (denyViewRoleID) {
+        permissionOverwrites.push({
+          id: denyViewRoleID,
+          deny: ['ViewChannel']
+        });
+      }
+
+      // 4. Pembuat channel: full control
+      permissionOverwrites.push({
+        id: member.id,
         allow: ['Connect', 'ManageChannels', 'MoveMembers', 'MuteMembers', 'DeafenMembers', 'ViewChannel', 'Speak', 'Stream', 'UseVAD', 'PrioritySpeaker']
+      });
+
+      // Buat temp voice channel dengan permission yang sudah di-setup
+      const tempChannel = await guild.channels.create({
+        name: `${member.displayName}'s Voice`,
+        type: 2, // GUILD_VOICE
+        parent: category,
+        permissionOverwrites: permissionOverwrites
       });
 
       // Pindahkan user ke temp channel
@@ -939,7 +950,7 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
         creatorId: member.id,
         categoryId: creatorData.categoryId,
         roleId: creatorData.roleId,
-        everyoneId: creatorData.everyoneId
+        denyViewRoleId: creatorData.denyViewRoleId
       });
       saveConfig();
 
