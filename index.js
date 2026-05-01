@@ -249,6 +249,12 @@ client.on('messageCreate', async message => {
 
       // Setup reaction role
       const key = `${messageId}-${emoji}`;
+
+      // Cek apakah reaction role sudah ada
+      if (reactionRoles.has(key)) {
+        return message.reply('⚠️ Reaction role dengan emoji tersebut sudah ada untuk message ini! Gunakan emoji lain atau hapus dulu yang lama.');
+      }
+
       reactionRoles.set(key, {
         guildId: message.guild.id,
         channelId: message.channel.id,
