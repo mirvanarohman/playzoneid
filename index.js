@@ -771,7 +771,19 @@ client.on('guildMemberRemove', async member => {
 client.on('messageReactionAdd', async (reaction, user) => {
   if (user.bot) return;
 
-  const key = `${reaction.message.id}-${reaction.emoji.name}`;
+  // Fetch message jika partial (tidak ada di cache)
+  if (reaction.message.partial) {
+    try {
+      await reaction.message.fetch();
+    } catch (error) {
+      console.error('Gagal fetch message:', error);
+      return;
+    }
+  }
+
+  // Gunakan identifier yang benar untuk emoji (support custom emoji)
+  const emojiIdentifier = reaction.emoji.id ? reaction.emoji.id : reaction.emoji.name;
+  const key = `${reaction.message.id}-${emojiIdentifier}`;
   const data = reactionRoles.get(key);
 
   if (!data) return;
@@ -792,7 +804,19 @@ client.on('messageReactionAdd', async (reaction, user) => {
 client.on('messageReactionRemove', async (reaction, user) => {
   if (user.bot) return;
 
-  const key = `${reaction.message.id}-${reaction.emoji.name}`;
+  // Fetch message jika partial (tidak ada di cache)
+  if (reaction.message.partial) {
+    try {
+      await reaction.message.fetch();
+    } catch (error) {
+      console.error('Gagal fetch message:', error);
+      return;
+    }
+  }
+
+  // Gunakan identifier yang benar untuk emoji (support custom emoji)
+  const emojiIdentifier = reaction.emoji.id ? reaction.emoji.id : reaction.emoji.name;
+  const key = `${reaction.message.id}-${emojiIdentifier}`;
   const data = reactionRoles.get(key);
 
   if (!data) return;
