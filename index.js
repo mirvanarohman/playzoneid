@@ -767,69 +767,37 @@ client.on('guildMemberRemove', async member => {
   }
 });
 
-// Event: Saat user add reaction
-client.on('messageReactionAdd', async (reaction, user) => {
-  if (user.bot) return;
+// Raw Events untuk reaction role (lebih reliable untuk pesan lama)
+client.on('raw', async packet => {
+  // Hanya proses MESSAGE_REACTION_ADD dan MESSAGE_REACTION_REMOVE
+  if (!['MESSAGE_REACTION_ADD', 'MESSAGE_REACTION_REMOVE'].includes(packet.t)) return;
 
-  // Fetch message jika partial (tidak ada di cache)
-  if (reaction.message.partial) {
-    try {
-      await reaction.message.fetch();
-    } catch (error) {
-      console.error('Gagal fetch message:', error);
-      return;
-    }
-  }
+  const { d: data } = packet;
+  const messageId = data.message_id;
+  const userId = data.user_id;
+  const emojiId = data.emoji.id || data.emoji.name;
 
-  // Gunakan identifier yang benar untuk emoji (support custom emoji)
-  const emojiIdentifier = reaction.emoji.id ? reaction.emoji.id : reaction.emoji.name;
-  const key = `${reaction.message.id}-${emojiIdentifier}`;
-  const data = reactionRoles.get(key);
+  // Buat key untuk mencari reaction role
+  const key = `${messageId}-${emojiId}`;
+  const roleData = reactionRoles.get(key);
 
-  if (!data) return;
+  if (!roleData) return; // Bukan reaction role yang terdaftar
 
   try {
-    const guild = await client.guilds.fetch(data.guildId);
-    const member = await guild.members.fetch(user.id);
-    const role = await guild.roles.fetch(data.roleId);
+    // Fetch guild, member, dan role
+    const guild = await client.guilds.fetch(roleData.guildId);
+    const member = await guild.members.fetch(userId);
+    const role = await guild.roles.fetch(roleData.roleId);
 
-    await member.roles.add(role);
-    console.log(`✅ ${user.tag} dapat role ${role.name}`);
-  } catch (error) {
-    console.error('Gagal add role:', error);
-  }
-});
-
-// Event: Saat user remove reaction
-client.on('messageReactionRemove', async (reaction, user) => {
-  if (user.bot) return;
-
-  // Fetch message jika partial (tidak ada di cache)
-  if (reaction.message.partial) {
-    try {
-      await reaction.message.fetch();
-    } catch (error) {
-      console.error('Gagal fetch message:', error);
-      return;
+    if (packet.t === 'MESSAGE_REACTION_ADD') {
+      await member.roles.add(role);
+      console.log(`✅ ${member.user.tag} dapat role ${role.name} (raw event)`);
+    } else {
+      await member.roles.remove(role);
+      console.log(`❌ ${member.user.tag} kehilangan role ${role.name} (raw event)`);
     }
-  }
-
-  // Gunakan identifier yang benar untuk emoji (support custom emoji)
-  const emojiIdentifier = reaction.emoji.id ? reaction.emoji.id : reaction.emoji.name;
-  const key = `${reaction.message.id}-${emojiIdentifier}`;
-  const data = reactionRoles.get(key);
-
-  if (!data) return;
-
-  try {
-    const guild = await client.guilds.fetch(data.guildId);
-    const member = await guild.members.fetch(user.id);
-    const role = await guild.roles.fetch(data.roleId);
-
-    await member.roles.remove(role);
-    console.log(`❌ ${user.tag} kehilangan role ${role.name}`);
   } catch (error) {
-    console.error('Gagal remove role:', error);
+    console.error('Gagal proses reaction role (raw):', error.message);
   }
 });
 
