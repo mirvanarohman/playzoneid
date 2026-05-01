@@ -93,11 +93,12 @@ client.on('messageCreate', async message => {
 
   // Moderasi Party Code Valorant
   const partyCodeChannelId = '1497224361357086893';
-  // Pattern: Harus ada kombinasi HURUF + ANGKA, 6 karakter
-  const valorantPartyCodePattern = /\b(?=.*[A-Z])(?=.*[0-9])[A-Z0-9]{6}\b/;
+  // Pattern: 6 karakter alphanumeric, harus mengandung minimal 1 huruf dan 1 angka, case-insensitive
+  // Menggunakan word boundary agar tidak match bagian dari string yang lebih panjang
+  const valorantPartyCodePattern = /\b(?=(?:[A-Za-z0-9]{0,5}[A-Za-z])(?:[A-Za-z0-9]{0,5}[0-9]))[A-Za-z0-9]{6}\b/;
 
   // Detect party code Valorant
-  if (valorantPartyCodePattern.test(message.content.toUpperCase())) {
+  if (valorantPartyCodePattern.test(message.content)) {
     // Jika dikirim di channel yang salah
     if (message.channelId !== partyCodeChannelId) {
       // Hapus pesan
