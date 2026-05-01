@@ -59,7 +59,50 @@ function saveConfig() {
 client.once('ready', () => {
   console.log(`Bot online sebagai ${client.user.tag}`);
   console.log(`Config loaded dari ${configPath}`);
+
+  // Bersihkan reaction role yang messagenya sudah dihapus
+  cleanOrphanedReactionRoles();
 });
+
+// Fungsi untuk membersihkan reaction role yang messagenya sudah dihapus
+async function cleanOrphanedReactionRoles() {
+  console.log('🧹 Memeriksa reaction role yang messagenya sudah dihapus...');
+
+  let deletedCount = 0;
+
+  for (const [key, roleData] of reactionRoles) {
+    try {
+      const channel = await client.channels.fetch(roleData.channelId).catch(() => null);
+      if (!channel) {
+        // Channel tidak ditemukan, hapus reaction role
+        reactionRoles.delete(key);
+        roleDisplayData.delete(roleData.messageId);
+        deletedCount++;
+        continue;
+      }
+
+      const message = await channel.messages.fetch(roleData.messageId).catch(() => null);
+      if (!message) {
+        // Message tidak ditemukan (dihapus), hapus reaction role
+        reactionRoles.delete(key);
+        roleDisplayData.delete(roleData.messageId);
+        deletedCount++;
+      }
+    } catch (error) {
+      // Gagal fetch, mungkin channel/message sudah dihapus
+      reactionRoles.delete(key);
+      roleDisplayData.delete(roleData.messageId);
+      deletedCount++;
+    }
+  }
+
+  if (deletedCount > 0) {
+    saveConfig();
+    console.log(`🗑️ ${deletedCount} reaction role berhasil dihapus karena message/channel sudah tidak ada.`);
+  } else {
+    console.log('✅ Semua reaction role valid.');
+  }
+}
 
 // Fungsi untuk normalisasi emoji identifier agar konsisten dengan raw events
 function normalizeEmojiIdentifier(emoji) {
@@ -819,6 +862,20 @@ client.on('raw', async packet => {
   }
 
   try {
+    // Cek apakah message masih ada (embed tidak dihapus)
+    const channel = await client.channels.fetch(roleData.channelId).catch(() => null);
+    if (channel) {
+      const message = await channel.messages.fetch(messageId).catch(() => null);
+      if (!message) {
+        // Message sudah dihapus, hapus dari config
+        console.log(`🗑️ Message ${messageId} sudah dihapus, menghapus reaction role dari config...`);
+        reactionRoles.delete(key);
+        roleDisplayData.delete(messageId);
+        saveConfig();
+        return;
+      }
+    }
+
     // Fetch guild, member, dan role
     const guild = await client.guilds.fetch(roleData.guildId);
     const member = await guild.members.fetch(userId);
