@@ -61,6 +61,25 @@ client.once('ready', () => {
   console.log(`Config loaded dari ${configPath}`);
 });
 
+// Fungsi untuk normalisasi emoji identifier agar konsisten dengan raw events
+function normalizeEmojiIdentifier(emoji) {
+  // Cek apakah custom emoji format: <:name:id> atau <a:name:id>
+  const customEmojiMatch = emoji.match(/^<(a)?:\w+:(\d+)>$/);
+
+  if (customEmojiMatch) {
+    // Custom emoji - gunakan ID
+    return customEmojiMatch[2];
+  }
+
+  // Standard emoji - gunakan unicode langsung
+  return emoji;
+}
+
+// Fungsi untuk mendapatkan emoji identifier dari raw event data
+function getEmojiIdentifierFromRaw(emojiData) {
+  return emojiData.id || emojiData.name;
+}
+
 // Interface channel data (untuk tombol manage)
 const interfaceChannels = new Map(); // messageID -> channelID
 
@@ -247,8 +266,11 @@ client.on('messageCreate', async message => {
       // React emoji
       await targetMessage.react(emoji);
 
+      // Normalisasi emoji identifier agar konsisten dengan raw events
+      const normalizedEmoji = normalizeEmojiIdentifier(emoji);
+
       // Setup reaction role
-      const key = `${messageId}-${emoji}`;
+      const key = `${messageId}-${normalizedEmoji}`;
 
       // Cek apakah reaction role sudah ada
       if (reactionRoles.has(key)) {
@@ -259,7 +281,7 @@ client.on('messageCreate', async message => {
         guildId: message.guild.id,
         channelId: message.channel.id,
         messageId,
-        emoji,
+        emoji: normalizedEmoji, // Simpan yang sudah dinormalisasi
         roleId
       });
 
@@ -782,13 +804,19 @@ client.on('raw', async packet => {
   const { d: data } = packet;
   const messageId = data.message_id;
   const userId = data.user_id;
-  const emojiId = data.emoji.id || data.emoji.name;
+
+  // Gunakan fungsi yang sama untuk normalisasi emoji identifier
+  const emojiIdentifier = getEmojiIdentifierFromRaw(data.emoji);
 
   // Buat key untuk mencari reaction role
-  const key = `${messageId}-${emojiId}`;
+  const key = `${messageId}-${emojiIdentifier}`;
   const roleData = reactionRoles.get(key);
 
-  if (!roleData) return; // Bukan reaction role yang terdaftar
+  if (!roleData) {
+    // Debug: log untuk mencari tahu kenapa tidak match
+    console.log(`⚠️ Reaction role tidak ditemukan: ${key}`);
+    return;
+  }
 
   try {
     // Fetch guild, member, dan role
@@ -798,10 +826,10 @@ client.on('raw', async packet => {
 
     if (packet.t === 'MESSAGE_REACTION_ADD') {
       await member.roles.add(role);
-      console.log(`✅ ${member.user.tag} dapat role ${role.name} (raw event)`);
+      console.log(`✅ ${member.user.tag} dapat role ${role.name} (raw event: ${key})`);
     } else {
       await member.roles.remove(role);
-      console.log(`❌ ${member.user.tag} kehilangan role ${role.name} (raw event)`);
+      console.log(`❌ ${member.user.tag} kehilangan role ${role.name} (raw event: ${key})`);
     }
   } catch (error) {
     console.error('Gagal proses reaction role (raw):', error.message);
